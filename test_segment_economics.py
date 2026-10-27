@@ -9,7 +9,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from retention_economics import build_segment_economics, assign_risk_segments
+from retention_economics import (
+    build_segment_economics, assign_risk_segments,
+    compute_clv, compute_margin_at_risk,
+)
 from config import RISK_LABELS, RETENTION_COST_MAP, INTERVENTION_LIFT_MAP
 
 
@@ -19,11 +22,15 @@ def _make_sample_df(n: int = 200) -> pd.DataFrame:
     churn_probs = rng.uniform(0.0, 1.0, size=n)
     monthly     = rng.uniform(20.0, 120.0, size=n)
 
+    charges = pd.Series(monthly)
+    clv = compute_clv(charges, churn_probs)
+    mar = compute_margin_at_risk(clv, churn_probs, charges)
+
     df = pd.DataFrame({
         "churn_prob":      churn_probs,
         "risk_segment":    assign_risk_segments(churn_probs),   # ← Categorical!
-        "clv":             monthly * 12 * (1 - churn_probs),
-        "revenue_at_risk": monthly * 12 * churn_probs,
+        "clv":             clv,
+        "margin_at_risk":  mar,
         "MonthlyCharges":  monthly,
     })
     return df
@@ -55,9 +62,9 @@ class TestBuildSegmentEconomics:
         assert pd.api.types.is_numeric_dtype(self.seg["total_retention_cost"])
         assert self.seg["total_retention_cost"].notna().all()
 
-    def test_expected_saved_rev_is_numeric_no_nan(self):
-        assert pd.api.types.is_numeric_dtype(self.seg["expected_saved_rev"])
-        assert self.seg["expected_saved_rev"].notna().all()
+    def test_expected_saved_margin_is_numeric_no_nan(self):
+        assert pd.api.types.is_numeric_dtype(self.seg["expected_saved_margin"])
+        assert self.seg["expected_saved_margin"].notna().all()
 
     def test_retention_roi_is_numeric_no_nan(self):
         assert pd.api.types.is_numeric_dtype(self.seg["retention_roi"])
@@ -72,10 +79,12 @@ class TestBuildSegmentEconomics:
         assert set(RETENTION_COST_MAP.keys()) == set(RISK_LABELS)
         assert set(INTERVENTION_LIFT_MAP.keys()) == set(RISK_LABELS)
 
-    # ── Budget percentages sum to ~100% ──────────────────────────
+    # ── Budget percentages sum to ~100% (only for ROI+ segments) ─
     def test_budget_pct_sums_to_100(self):
         total = self.seg["recommended_budget_pct"].sum()
-        assert abs(total - 100.0) < 0.5, f"Budget % sums to {total}, expected ~100"
+        assert abs(total - 100.0) < 0.5 or total == 0.0, (
+            f"Budget % sums to {total}, expected ~100 or 0"
+        )
 
     # ── ROI values are plausible (positive for at least one) ─────
     def test_at_least_one_positive_roi(self):

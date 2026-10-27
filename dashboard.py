@@ -22,7 +22,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from config import ARTIFACTS_DIR, RISK_LABELS, RETENTION_COST_MAP, INTERVENTION_LIFT_MAP
+from config import ARTIFACTS_DIR, RISK_LABELS, RETENTION_COST_MAP, INTERVENTION_LIFT_MAP, CLV_HORIZON_MONTHS
 
 # ─────────────────────────────── Page config ─────────────────────────────────
 st.set_page_config(
@@ -233,11 +233,11 @@ def fmt_pct(val):
 # ═══════════════════════════ 1. EXECUTIVE SUMMARY ════════════════════════════
 if view == "🏠 Executive Summary":
     st.markdown("## 📊 Executive Summary")
-    st.markdown("*Revenue-at-risk and retention opportunity at a glance*")
+    st.markdown("*Margin-at-risk and retention opportunity at a glance*")
 
     # ── KPI row ──────────────────────────────────────────────────
     total_customers   = len(df)
-    total_rev_at_risk = df["revenue_at_risk"].sum()
+    total_margin_at_risk = df["margin_at_risk"].sum()
     total_clv         = df["clv"].sum()
     avg_churn_prob    = df["churn_prob"].mean()
     critical_count    = (df["risk_segment"] == "Critical").sum() + (df["risk_segment"] == "High").sum()
@@ -250,12 +250,12 @@ if view == "🏠 Executive Summary":
             <div class="kpi-sub">in portfolio</div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-label">Revenue at Risk</div>
-            <div class="kpi-value">{fmt_dollar(total_rev_at_risk)}</div>
-            <div class="kpi-sub">36-month horizon</div>
+            <div class="kpi-label">Margin at Risk</div>
+            <div class="kpi-value">{fmt_dollar(total_margin_at_risk)}</div>
+            <div class="kpi-sub">{CLV_HORIZON_MONTHS}-month horizon</div>
         </div>
         <div class="kpi-card">
-            <div class="kpi-label">Total CLV</div>
+            <div class="kpi-label">Total CLV (Margin)</div>
             <div class="kpi-value">{fmt_dollar(total_clv)}</div>
             <div class="kpi-sub">discounted @ 10% APR</div>
         </div>
@@ -287,7 +287,7 @@ if view == "🏠 Executive Summary":
             <div class="seg-big">{int(row['customer_count']):,}</div>
             <div class="seg-metric">customers</div>
             <div class="seg-metric">Avg churn: {row['avg_churn_prob']:.0%}</div>
-            <div class="seg-metric">Rev at risk: {fmt_dollar(row['total_rev_at_risk'])}</div>
+            <div class="seg-metric">Margin at risk: {fmt_dollar(row['total_margin_at_risk'])}</div>
             <div class="seg-metric">Median CLV: {fmt_dollar(row['median_clv'])}</div>
         </div>"""
     seg_html += '</div>'
@@ -297,22 +297,22 @@ if view == "🏠 Executive Summary":
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown('<div class="section-header">📊 Revenue at Risk by Segment</div>',
+        st.markdown('<div class="section-header">📊 Margin at Risk by Segment</div>',
                     unsafe_allow_html=True)
         fig_bar = go.Figure()
         for _, row in seg.iterrows():
             fig_bar.add_trace(go.Bar(
                 x=[row["risk_segment"]],
-                y=[row["total_rev_at_risk"]],
+                y=[row["total_margin_at_risk"]],
                 marker_color=RISK_COLORS.get(row["risk_segment"], "#6366f1"),
-                text=[fmt_dollar(row["total_rev_at_risk"])],
+                text=[fmt_dollar(row["total_margin_at_risk"])],
                 textposition="outside",
                 name=row["risk_segment"],
                 showlegend=False,
             ))
         fig_bar.update_layout(
             **PLOTLY_LAYOUT,
-            yaxis=dict(title="Revenue at Risk ($)", gridcolor="rgba(99,102,241,0.1)"),
+            yaxis=dict(title="Margin at Risk ($)", gridcolor="rgba(99,102,241,0.1)"),
             xaxis=dict(title=""),
             height=380,
         )
@@ -425,25 +425,25 @@ elif view == "💰 Retention ROI":
 
     display_seg = seg[[
         "risk_segment", "customer_count", "avg_churn_prob",
-        "total_rev_at_risk", "retention_cost_pp", "total_retention_cost",
-        "intervention_lift", "expected_saved_rev", "retention_roi",
+        "total_margin_at_risk", "retention_cost_pp", "total_retention_cost",
+        "intervention_lift", "expected_saved_margin", "retention_roi",
         "recommended_budget_pct",
     ]].copy()
     display_seg.columns = [
         "Segment", "Customers", "Avg P(Churn)",
-        "Revenue at Risk", "Cost/Customer", "Total Cost",
-        "Lift", "Expected Saved Rev", "ROI",
+        "Margin at Risk", "Cost/Customer", "Total Cost",
+        "Lift", "Expected Saved Margin", "ROI",
         "Budget %",
     ]
     st.dataframe(
         display_seg.style
         .format({
             "Avg P(Churn)": "{:.1%}",
-            "Revenue at Risk": "${:,.0f}",
+            "Margin at Risk": "${:,.0f}",
             "Cost/Customer": "${:,.0f}",
             "Total Cost": "${:,.0f}",
             "Lift": "{:.0%}",
-            "Expected Saved Rev": "${:,.0f}",
+            "Expected Saved Margin": "${:,.0f}",
             "ROI": "{:.0%}",
             "Budget %": "{:.1f}%",
         }),
@@ -451,25 +451,25 @@ elif view == "💰 Retention ROI":
         height=220,
     )
 
-    # ── Waterfall: Saved revenue vs cost ─────────────────────────
-    st.markdown('<div class="section-header">💧 Revenue Recovery Waterfall</div>',
+    # ── Waterfall: Saved margin vs cost ───────────────────────────
+    st.markdown('<div class="section-header">💧 Margin Recovery Waterfall</div>',
                 unsafe_allow_html=True)
 
     waterfall_items = []
     for _, row in seg.iterrows():
         waterfall_items.append(dict(
             label=f"{row['risk_segment']} Saved",
-            value=row["expected_saved_rev"],
+            value=row["expected_saved_margin"],
         ))
-    total_saved = seg["expected_saved_rev"].sum()
+    total_saved = seg["expected_saved_margin"].sum()
     total_cost  = seg["total_retention_cost"].sum()
 
     fig_wf = go.Figure(go.Waterfall(
         orientation="v",
         measure=["relative"] * len(seg) + ["relative", "total"],
-        x=[f"{r['risk_segment']}\nSaved Rev" for _, r in seg.iterrows()] + ["Total\nCost", "Net\nBenefit"],
-        y=[r["expected_saved_rev"] for _, r in seg.iterrows()] + [-total_cost, 0],
-        text=[fmt_dollar(r["expected_saved_rev"]) for _, r in seg.iterrows()] + [
+        x=[f"{r['risk_segment']}\nSaved" for _, r in seg.iterrows()] + ["Total\nCost", "Net\nBenefit"],
+        y=[r["expected_saved_margin"] for _, r in seg.iterrows()] + [-total_cost, 0],
+        text=[fmt_dollar(r["expected_saved_margin"]) for _, r in seg.iterrows()] + [
             f"-{fmt_dollar(total_cost)}", fmt_dollar(total_saved - total_cost)
         ],
         textposition="outside",
@@ -488,7 +488,7 @@ elif view == "💰 Retention ROI":
     net_benefit = total_saved - total_cost
     st.markdown(f"""
     > **💡 Key Insight:** Investing **{fmt_dollar(total_cost)}** in targeted retention
-    > across all segments is projected to save **{fmt_dollar(total_saved)}** in revenue,
+    > across ROI-positive segments is projected to save **{fmt_dollar(total_saved)}** in contribution margin,
     > yielding a net benefit of **{fmt_dollar(net_benefit)}**
     > ({net_benefit/total_cost:.0%} overall ROI).
     """)
@@ -508,25 +508,25 @@ elif view == "🔍 Customer Deep-Dive":
         )
     with col_f2:
         min_rev = st.slider(
-            "Min Revenue at Risk ($)",
-            0, int(df["revenue_at_risk"].max()),
+            "Min Margin at Risk ($)",
+            0, int(df["margin_at_risk"].max()),
             value=0,
         )
     with col_f3:
         sort_by = st.selectbox(
             "Sort By",
-            ["revenue_at_risk", "churn_prob", "clv", "MonthlyCharges"],
+            ["margin_at_risk", "churn_prob", "clv", "MonthlyCharges"],
             index=0,
         )
 
     filtered = df[
         df["risk_segment"].isin(seg_filter)
-        & (df["revenue_at_risk"] >= min_rev)
+        & (df["margin_at_risk"] >= min_rev)
     ].sort_values(sort_by, ascending=False)
 
     st.markdown(f"""
     <span class="info-pill">{len(filtered):,} customers</span>
-    <span class="info-pill">Rev at Risk: {fmt_dollar(filtered["revenue_at_risk"].sum())}</span>
+    <span class="info-pill">Margin at Risk: {fmt_dollar(filtered["margin_at_risk"].sum())}</span>
     <span class="info-pill">Total CLV: {fmt_dollar(filtered["clv"].sum())}</span>
     """, unsafe_allow_html=True)
     st.markdown("")
@@ -542,7 +542,7 @@ elif view == "🔍 Customer Deep-Dive":
         size="MonthlyCharges",
         color="risk_segment",
         color_discrete_map=RISK_COLORS,
-        hover_data=["customerID", "MonthlyCharges", "revenue_at_risk", "tenure"],
+        hover_data=["customerID", "MonthlyCharges", "margin_at_risk", "tenure"],
         labels={
             "churn_prob": "Churn Probability",
             "clv": "Customer Lifetime Value ($)",
@@ -562,20 +562,20 @@ elif view == "🔍 Customer Deep-Dive":
 
     display_cols = [
         "customerID", "risk_segment", "churn_prob", "clv",
-        "revenue_at_risk", "MonthlyCharges", "TotalCharges",
+        "margin_at_risk", "MonthlyCharges", "TotalCharges",
         "tenure", "Contract", "InternetService",
     ]
     display_df = filtered[display_cols].head(200).copy()
     display_df.columns = [
         "Customer ID", "Segment", "P(Churn)", "CLV ($)",
-        "Rev at Risk ($)", "Monthly ($)", "Total ($)",
+        "Margin at Risk ($)", "Monthly ($)", "Total ($)",
         "Tenure (mo)", "Contract", "Internet",
     ]
     st.dataframe(
         display_df.style.format({
             "P(Churn)": "{:.1%}",
             "CLV ($)": "${:,.0f}",
-            "Rev at Risk ($)": "${:,.0f}",
+            "Margin at Risk ($)": "${:,.0f}",
             "Monthly ($)": "${:,.2f}",
             "Total ($)": "${:,.2f}",
         }).background_gradient(

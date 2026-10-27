@@ -30,21 +30,49 @@ TARGET_COLUMN = "Churn"
 ID_COLUMN     = "customerID"
 
 # ── CLV economics ───────────────────────────────────────────────────────────
-DISCOUNT_RATE      = 0.10        # annual discount rate for CLV present-value
-AVG_MARGIN_RATE    = 0.30        # gross-margin % on monthly charges
-RETENTION_COST_MAP = {            # $/customer cost of intervention per segment
+# Annual discount rate applied to future cash-flows in the CLV calculation.
+DISCOUNT_RATE      = 0.10
+
+# ── Churn-label horizon ─────────────────────────────────────────────────────
+# MODELLING ASSUMPTION — not a known property of the dataset.
+# The IBM Telco "Churn" column is an observed snapshot (did this customer
+# churn?) with no explicit calendar period.  We *propose* treating the
+# model's predicted churn probability as a probability of churning within
+# CLV_HORIZON_MONTHS months and convert it to an implied monthly rate
+# inside compute_clv().  Change this value (and re-run train.py) to test
+# sensitivity.
+CLV_HORIZON_MONTHS = 36
+
+# Assumed contribution-margin fraction applied to MonthlyCharges.
+# This is NOT top-line revenue — downstream dollar values represent
+# contribution margin, and labels should reflect that.
+CONTRIBUTION_MARGIN_RATE = 0.30
+
+# Backward-compatible alias — will be removed once all call-sites are
+# updated in subsequent steps.
+AVG_MARGIN_RATE = CONTRIBUTION_MARGIN_RATE
+
+# Assumed per-customer cost of a retention intervention, segmented by
+# risk tier.  Source: placeholder estimates — replace with actuals when
+# available.
+RETENTION_COST_MAP = {
     "Critical":  50.0,
     "High":      30.0,
     "Medium":    15.0,
     "Low":        5.0,
 }
-# Estimated lift in retention probability from an intervention
+
+# Fraction of at-risk margin that can be recovered by a successful
+# intervention, per segment.  Despite the name "lift", this is applied
+# as a multiplier on dollar margin-at-risk, NOT as a probability delta.
+# Source: placeholder estimates — replace with actuals when available.
 INTERVENTION_LIFT_MAP = {
     "Critical":  0.15,
     "High":      0.12,
     "Medium":    0.08,
     "Low":       0.03,
 }
+
 
 # ── Model hyper-parameters (XGBoost) ────────────────────────────────────────
 XGBOOST_PARAMS = dict(

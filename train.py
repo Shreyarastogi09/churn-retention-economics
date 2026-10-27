@@ -12,7 +12,9 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+from sklearn.model_selection import cross_val_predict
 
 from data_pipeline import prepare_data, load_raw_data, engineer_features, encode_dataframe
 from churn_model import train_model, evaluate_model, score_customers, save_model
@@ -48,11 +50,24 @@ def main(data_path=None):
     cm = metrics["confusion_matrix"]
     print(f"\n      Confusion Matrix:\n      {cm[0]}\n      {cm[1]}")
 
-    # 4. Score full dataset
-    print("\n[4/5] Computing CLV & revenue-at-risk ...")
-    X_full, _, _ = encode_dataframe(engineer_features(load_raw_data(data_path)))
-    churn_probs = score_customers(model, X_full)
-    df_econ = enrich_customer_data(df_full, churn_probs)
+    # 4. Score full dataset (out-of-fold for train, held-out for test)
+    print("\n[4/5] Computing CLV & margin-at-risk (OOF scoring) ...")
+
+    # Out-of-fold predictions for training rows avoid data leakage:
+    # each training customer is scored by a model that never saw it.
+    oof_probs = cross_val_predict(
+        model, X_train, y_train, cv=5, method="predict_proba",
+    )[:, 1]
+
+    # Held-out test predictions (already unseen by the final model)
+    test_probs = score_customers(model, X_test)
+
+    # Stitch together, aligned to df_full's original index
+    churn_probs = np.empty(len(df_full), dtype=float)
+    churn_probs[X_train.index] = oof_probs
+    churn_probs[X_test.index]  = test_probs
+
+    df_econ  = enrich_customer_data(df_full, churn_probs)
     seg_econ = build_segment_economics(df_econ)
 
     # 5. Persist
